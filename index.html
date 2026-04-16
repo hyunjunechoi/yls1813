@@ -263,7 +263,7 @@ let isRoundFinished = false
 let availableYears = []
 let selectedYear = "all"
 
-fetch("23242526.xlsx")
+fetch("23242526V2.xlsx")
 .then(res => {
   if (!res.ok) throw new Error("엑셀 파일을 불러오지 못했습니다.")
   return res.arrayBuffer()
