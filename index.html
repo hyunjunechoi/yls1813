@@ -143,16 +143,21 @@ background:#a0b4d6;
 cursor:not-allowed;
 }
 
+#statusNote{
+margin-top:10px;
+padding:12px 14px;
+border-radius:8px;
+background:#eef4ff;
+color:#1e3a8a;
+font-size:13px;
+line-height:1.5;
+display:none;
+}
+
 #progress{
 margin-top:15px;
 font-size:14px;
 color:#555;
-}
-
-.pdf-note{
-font-size:13px;
-color:#666;
-margin-top:10px;
 }
 
 .pdf-wrap{
@@ -240,10 +245,10 @@ background:#fafbfc;
 
   <div class="action-buttons">
     <button id="nextBtn">다음 문제 (3)</button>
-    <button id="exportBtn" disabled>중간 오답노트 PDF</button>
+    <button id="exportBtn" disabled>오답노트 저장</button>
   </div>
 
-  <div class="pdf-note">문제 풀이 중간에도 현재까지 틀린 문제 기준으로 오답노트를 저장할 수 있습니다. 모바일에서는 PDF가 새 탭으로 열릴 수 있습니다.</div>
+  <div id="statusNote"></div>
   <div id="progress"></div>
 </div>
 
@@ -262,6 +267,8 @@ let answered = false
 let isRoundFinished = false
 let availableYears = []
 let selectedYear = "all"
+
+const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.matchMedia("(max-width: 768px)").matches
 
 fetch("제목 없는 스프레드시트.xlsx")
 .then(res => {
@@ -284,6 +291,7 @@ fetch("제목 없는 스프레드시트.xlsx")
 
   renderYearTabs()
   applyYearFilter("all")
+  updateExportUi()
 })
 .catch(err => {
   document.getElementById("question").innerText = "문항 데이터를 불러오지 못했습니다."
@@ -333,6 +341,7 @@ function resetRound(){
 
   shuffle()
   nextQuestion()
+  clearStatusNote()
 }
 
 function shuffle(){
@@ -348,6 +357,26 @@ function getYearLabel(){
   return selectedYear === "all" ? "전체" : `${selectedYear}년`
 }
 
+function getFileBaseName(){
+  return `오답노트_${selectedYear === "all" ? "전체" : selectedYear + "년"}`
+}
+
+function updateExportUi(){
+  const exportBtn = document.getElementById("exportBtn")
+  exportBtn.innerText = isMobileDevice
+    ? (isRoundFinished ? "오답노트 파일 공유" : "중간 오답노트 파일 공유")
+    : (isRoundFinished ? "오답노트 PDF 만들기" : "중간 오답노트 PDF")
+
+  const note = document.getElementById("statusNote")
+  if(isMobileDevice){
+    note.style.display = "block"
+    note.innerText = "모바일에서는 PDF 대신 TXT 파일을 생성합니다. 지원되는 브라우저에서는 iPhone 공유 시트를 바로 열고, 지원되지 않으면 파일 다운로드로 대체합니다."
+  }else{
+    note.style.display = wrongList.length > 0 ? "block" : "none"
+    note.innerText = "데스크톱에서는 PDF로 저장됩니다."
+  }
+}
+
 function updateProgress(){
   const total = shuffled.length
   const currentProgress = total === 0 ? 0 : Math.min(currentIndex + (answered ? 0 : 1), total)
@@ -357,7 +386,7 @@ function updateProgress(){
 
   const exportBtn = document.getElementById("exportBtn")
   exportBtn.disabled = wrongList.length === 0
-  exportBtn.innerText = isRoundFinished ? "오답노트 PDF 만들기" : "중간 오답노트 PDF"
+  updateExportUi()
 }
 
 function nextQuestion(){
@@ -470,63 +499,115 @@ function buildWrongNoteHtml(){
   `
 }
 
-function isMobileDevice(){
-  return /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent || "")
+function buildWrongNoteText(){
+  const now = new Date()
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+
+  const lines = [
+    "OX 퀴즈 오답노트",
+    `생성 시각: ${timestamp}`,
+    `보기 기준: ${getYearLabel()}`,
+    `총 문항: ${shuffled.length}`,
+    `현재 진행: ${currentIndex}`,
+    `정답: ${correctCount}`,
+    `오답: ${wrongCount}`,
+    ""
+  ]
+
+  if(wrongList.length === 0){
+    lines.push("현재까지 틀린 문제가 없습니다.")
+    return lines.join("\n")
+  }
+
+  wrongList.forEach((q, i) => {
+    lines.push(`[${i + 1}]`)
+    lines.push(`문제번호: ${q["문제번호"] || ""}`)
+    lines.push(`문제: ${q["문제"] || ""}`)
+    lines.push(`선택한답: ${q.userAnswer || ""}`)
+    lines.push(`정답: ${String(q["정답"] || "").toUpperCase()}`)
+    lines.push(`해설: ${q["해설"] || "해설 없음"}`)
+    lines.push("")
+  })
+
+  return lines.join("\n")
 }
 
-async function createPDF(){
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function shareOrDownloadTextFile(){
+  const content = buildWrongNoteText()
+  const filename = `${getFileBaseName()}.txt`
+  const blob = new Blob(["\uFEFF", content], { type: "text/plain;charset=utf-8" })
+  const file = new File([blob], filename, { type: "text/plain;charset=utf-8", lastModified: Date.now() })
+
+  try{
+    if(navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share){
+      await navigator.share({
+        files: [file],
+        title: filename,
+        text: `${getYearLabel()} 오답노트 파일입니다.`
+      })
+      return
+    }
+  }catch(err){
+    if(err && err.name === "AbortError") return
+    console.warn("공유 실패, 다운로드로 대체합니다.", err)
+  }
+
+  downloadBlob(blob, filename)
+}
+
+function createPDF(){
   const target = document.createElement("div")
   target.innerHTML = buildWrongNoteHtml()
 
-  const filename = `오답노트_${selectedYear === "all" ? "전체" : selectedYear + "년"}.pdf`
   const opt = {
     margin: 10,
-    filename,
+    filename: `${getFileBaseName()}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'] }
   }
 
-  const worker = html2pdf().set(opt).from(target)
+  html2pdf().set(opt).from(target).save()
+}
 
-  if(isMobileDevice()){
-    try{
-      const blob = await worker.toPdf().outputPdf('blob')
-      const url = URL.createObjectURL(blob)
-      const opened = window.open(url, '_blank')
-
-      if(!opened){
-        const link = document.createElement('a')
-        link.href = url
-        link.download = filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    }catch(error){
-      console.error(error)
-      alert('모바일 PDF 열기에 실패했습니다. 다시 시도해 주세요.')
-    }
-    return
+function exportWrongNote(){
+  if(wrongList.length === 0) return
+  if(isMobileDevice){
+    shareOrDownloadTextFile()
+  }else{
+    createPDF()
   }
-
-  worker.save()
 }
 
 document.getElementById("oBtn").onclick = () => check("o")
 document.getElementById("xBtn").onclick = () => check("x")
 document.getElementById("nextBtn").onclick = nextQuestion
-document.getElementById("exportBtn").onclick = createPDF
+document.getElementById("exportBtn").onclick = exportWrongNote
 
 document.addEventListener("keydown", (e) => {
   if(e.key === "1") check("o")
   if(e.key === "2") check("x")
   if(e.key === "3" || e.key === "Enter") nextQuestion()
-  if((e.key === "p" || e.key === "P") && wrongList.length > 0) createPDF()
+  if((e.key === "p" || e.key === "P") && wrongList.length > 0) exportWrongNote()
 })
+
+function clearStatusNote(){
+  if(isMobileDevice){
+    updateExportUi()
+  }
+}
 </script>
 
 </body>
