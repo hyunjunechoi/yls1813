@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OX 퀴즈 연습</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+
+<style>
+body{
+font-family:Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+background:#f4f6f8;
+display:flex;
+justify-content:center;
+align-items:center;
+min-height:100vh;
+margin:0;
+padding:24px;
+box-sizing:border-box;
+}
+
+.container{
+width:760px;
+max-width:100%;
+background:white;
+padding:32px;
+border-radius:10px;
+box-shadow:0 4px 15px rgba(0,0,0,0.1);
+box-sizing:border-box;
+}
+
+.topbar{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:12px;
+margin-bottom:20px;
+padding-bottom:14px;
+border-bottom:1px solid #e5e7eb;
+flex-wrap:wrap;
+}
+
+.topbar-title{
+font-size:18px;
+font-weight:700;
+color:#111827;
+}
+
+.year-tabs{
+display:flex;
+gap:8px;
+flex-wrap:wrap;
+}
+
+.year-tab{
+padding:8px 14px;
+font-size:14px;
+border:1px solid #cfd6de;
+background:#fff;
+color:#334155;
+border-radius:999px;
+cursor:pointer;
+}
+
+.year-tab.active{
+background:#111827;
+color:#fff;
+border-color:#111827;
+}
+
+#number{
+font-size:18px;
+color:#777;
+margin-bottom:10px;
+}
+
+#question{
+font-size:20px;
+margin-bottom:30px;
+word-break:keep-all;
+line-height:1.5;
+}
+
+.buttons{
+display:flex;
+gap:20px;
+margin-bottom:20px;
+}
+
+button{
+flex:1;
+padding:15px;
+font-size:20px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+}
+
+#oBtn{background:#4CAF50;color:white;}
+#xBtn{background:#f44336;color:white;}
+
+#result{
+font-weight:bold;
+margin-bottom:15px;
+}
+
+#explanation{
+background:#f1f3f5;
+padding:15px;
+border-radius:8px;
+display:none;
+word-break:keep-all;
+line-height:1.6;
+}
+
+.action-buttons{
+display:flex;
+gap:12px;
+margin-top:20px;
+flex-wrap:wrap;
+}
+
+.action-buttons button{
+flex:1;
+min-width:220px;
+}
+
+#nextBtn{
+background:#333;
+color:white;
+}
+
+#exportBtn{
+background:#1f6feb;
+color:white;
+}
+
+#exportBtn:disabled{
+background:#a0b4d6;
+cursor:not-allowed;
+}
+
+#progress{
+margin-top:15px;
+font-size:14px;
+color:#555;
+}
+
+.pdf-note{
+font-size:13px;
+color:#666;
+margin-top:10px;
+}
+
+.pdf-wrap{
+font-family:Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+color:#111;
+padding:24px;
+line-height:1.6;
+}
+
+.pdf-title{
+font-size:24px;
+font-weight:700;
+margin-bottom:8px;
+}
+
+.pdf-subtitle{
+font-size:13px;
+color:#555;
+margin-bottom:20px;
+}
+
+.pdf-summary{
+background:#f3f5f7;
+border:1px solid #d8dee4;
+border-radius:10px;
+padding:14px 16px;
+margin-bottom:18px;
+font-size:14px;
+}
+
+.pdf-item{
+border:1px solid #d8dee4;
+border-radius:10px;
+padding:16px;
+margin-bottom:14px;
+page-break-inside:avoid;
+}
+
+.pdf-item-title{
+font-size:16px;
+font-weight:700;
+margin-bottom:8px;
+}
+
+.pdf-label{
+font-weight:700;
+display:block;
+margin-top:8px;
+}
+
+.pdf-empty{
+padding:24px;
+border:1px dashed #c7ced6;
+border-radius:10px;
+background:#fafbfc;
+}
+
+@media (max-width: 640px){
+  .container{padding:20px;}
+  .buttons{flex-direction:column;}
+  .action-buttons{flex-direction:column;}
+  .topbar{align-items:flex-start;}
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-title">OX 퀴즈 연습</div>
+    <div id="yearTabs" class="year-tabs"></div>
+  </div>
+
+  <div id="number"></div>
+  <div id="question"></div>
+
+  <div class="buttons">
+    <button id="oBtn">O (1)</button>
+    <button id="xBtn">X (2)</button>
+  </div>
+
+  <div id="result"></div>
+  <div id="explanation"></div>
+
+  <div class="action-buttons">
+    <button id="nextBtn">다음 문제 (3)</button>
+    <button id="exportBtn" disabled>중간 오답노트 PDF</button>
+  </div>
+
+  <div class="pdf-note">문제 풀이 중간에도 현재까지 틀린 문제 기준으로 오답노트를 저장할 수 있습니다.</div>
+  <div id="progress"></div>
+</div>
+
+<script>
+let quizData = []
+let filteredQuizData = []
+let shuffled = []
+let currentIndex = 0
+let current = null
+
+let correctCount = 0
+let wrongCount = 0
+let wrongList = []
+
+let answered = false
+let isRoundFinished = false
+let availableYears = []
+let selectedYear = "all"
+
+fetch("제목 없는 스프레드시트.xlsx")
+.then(res => {
+  if (!res.ok) throw new Error("엑셀 파일을 불러오지 못했습니다.")
+  return res.arrayBuffer()
+})
+.then(data => {
+  const workbook = XLSX.read(data)
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  quizData = XLSX.utils.sheet_to_json(sheet).map(item => ({
+    ...item,
+    출제연도: extractYear(item["문제번호"])
+  }))
+
+  availableYears = [...new Set(
+    quizData
+      .map(item => item["출제연도"])
+      .filter(Boolean)
+  )].sort((a, b) => b.localeCompare(a))
+
+  renderYearTabs()
+  applyYearFilter("all")
+})
+.catch(err => {
+  document.getElementById("question").innerText = "문항 데이터를 불러오지 못했습니다."
+  document.getElementById("result").innerText = err.message
+  document.getElementById("result").style.color = "red"
+})
+
+function extractYear(problemNo){
+  const text = String(problemNo ?? "").trim()
+  const match = text.match(/^(\d{2})/)
+  return match ? match[1] : ""
+}
+
+function renderYearTabs(){
+  const yearTabs = document.getElementById("yearTabs")
+  const years = ["all", ...availableYears]
+
+  yearTabs.innerHTML = years.map(year => {
+    const label = year === "all" ? "전체" : `${year}년`
+    const activeClass = year === selectedYear ? "active" : ""
+    return `<button type="button" class="year-tab ${activeClass}" data-year="${year}">${label}</button>`
+  }).join("")
+
+  yearTabs.querySelectorAll(".year-tab").forEach(btn => {
+    btn.addEventListener("click", () => applyYearFilter(btn.dataset.year))
+  })
+}
+
+function applyYearFilter(year){
+  selectedYear = year
+  filteredQuizData = year === "all"
+    ? [...quizData]
+    : quizData.filter(item => item["출제연도"] === year)
+
+  resetRound()
+  renderYearTabs()
+}
+
+function resetRound(){
+  currentIndex = 0
+  current = null
+  correctCount = 0
+  wrongCount = 0
+  wrongList = []
+  answered = false
+  isRoundFinished = false
+
+  shuffle()
+  nextQuestion()
+}
+
+function shuffle(){
+  shuffled = [...filteredQuizData]
+
+  for(let i = shuffled.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+}
+
+function getYearLabel(){
+  return selectedYear === "all" ? "전체" : `${selectedYear}년`
+}
+
+function updateProgress(){
+  const total = shuffled.length
+  const currentProgress = total === 0 ? 0 : Math.min(currentIndex + (answered ? 0 : 1), total)
+
+  document.getElementById("progress").innerText =
+    `보기 ${getYearLabel()} | 진행 ${currentProgress} / ${total} | 맞춤 ${correctCount} | 틀림 ${wrongCount}`
+
+  const exportBtn = document.getElementById("exportBtn")
+  exportBtn.disabled = wrongList.length === 0
+  exportBtn.innerText = isRoundFinished ? "오답노트 PDF 만들기" : "중간 오답노트 PDF"
+}
+
+function nextQuestion(){
+  if(shuffled.length === 0){
+    current = null
+    document.getElementById("number").innerText = ""
+    document.getElementById("question").innerText = "선택한 연도에 해당하는 문제가 없습니다."
+    document.getElementById("result").innerText = ""
+    document.getElementById("explanation").style.display = "none"
+    document.getElementById("nextBtn").innerText = "연도를 다시 선택하세요"
+    document.getElementById("nextBtn").onclick = () => {}
+    updateProgress()
+    return
+  }
+
+  if(currentIndex >= shuffled.length){
+    finishRound()
+    return
+  }
+
+  isRoundFinished = false
+  answered = false
+
+  document.getElementById("result").innerText = ""
+  document.getElementById("explanation").style.display = "none"
+
+  current = shuffled[currentIndex]
+
+  document.getElementById("number").innerText = `[ ${current["문제번호"] ?? currentIndex + 1} ]`
+  document.getElementById("question").innerText = current["문제"] ?? "문제 내용 없음"
+  document.getElementById("nextBtn").innerText = "다음 문제 (3)"
+  document.getElementById("nextBtn").onclick = nextQuestion
+
+  updateProgress()
+}
+
+function check(answer){
+  if(answered || !current) return
+
+  answered = true
+  const correct = String(current["정답"] ?? "").trim().toLowerCase()
+
+  if(answer === correct){
+    correctCount++
+    document.getElementById("result").innerText = "정답입니다!"
+    document.getElementById("result").style.color = "green"
+  }else{
+    wrongCount++
+    document.getElementById("result").innerText = "틀렸습니다! 정답: " + correct.toUpperCase()
+    document.getElementById("result").style.color = "red"
+    wrongList.push({ ...current, userAnswer: answer.toUpperCase() })
+  }
+
+  const exp = current["해설"] ? current["해설"] : "해설 없음"
+  const expDiv = document.getElementById("explanation")
+  expDiv.innerText = "해설: " + exp
+  expDiv.style.display = "block"
+
+  currentIndex++
+  updateProgress()
+}
+
+function finishRound(){
+  isRoundFinished = true
+  document.getElementById("question").innerText = `${getYearLabel()} 문제 풀이 완료!`
+  document.getElementById("number").innerText = ""
+  document.getElementById("result").innerText = `맞춘 문제 ${correctCount} / 틀린 문제 ${wrongCount}`
+  document.getElementById("result").style.color = "#111"
+  document.getElementById("explanation").style.display = "none"
+  document.getElementById("nextBtn").innerText = "같은 연도 다시 풀려면 연도 탭 재선택"
+  document.getElementById("nextBtn").onclick = () => {}
+  updateProgress()
+}
+
+function escapeHtml(value){
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+}
+
+function buildWrongNoteHtml(){
+  const now = new Date()
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+
+  const itemsHtml = wrongList.length
+    ? wrongList.map((q, i) => `
+      <div class="pdf-item">
+        <div class="pdf-item-title">${i + 1}. 문제번호: ${escapeHtml(q["문제번호"] ?? i + 1)}</div>
+        <div><span class="pdf-label">출제연도</span>${escapeHtml(q["출제연도"] ? q["출제연도"] + "년" : "-")}</div>
+        <div><span class="pdf-label">문제</span>${escapeHtml(q["문제"] || "")}</div>
+        <div><span class="pdf-label">내 답</span>${escapeHtml(q.userAnswer || "")}</div>
+        <div><span class="pdf-label">정답</span>${escapeHtml(q["정답"] || "")}</div>
+        <div><span class="pdf-label">해설</span>${escapeHtml(q["해설"] || "해설 없음")}</div>
+      </div>
+    `).join("")
+    : `<div class="pdf-empty">현재까지 틀린 문제가 없어 오답노트 항목이 없습니다.</div>`
+
+  return `
+    <div class="pdf-wrap">
+      <div class="pdf-title">OX 퀴즈 오답노트</div>
+      <div class="pdf-subtitle">생성 시각: ${timestamp}</div>
+      <div class="pdf-summary">
+        기준 ${escapeHtml(getYearLabel())} · 총 문항 ${shuffled.length}개 · 현재 진행 ${currentIndex}개 · 정답 ${correctCount}개 · 오답 ${wrongCount}개
+      </div>
+      ${itemsHtml}
+    </div>
+  `
+}
+
+function createPDF(){
+  const target = document.createElement("div")
+  target.innerHTML = buildWrongNoteHtml()
+
+  const opt = {
+    margin: 10,
+    filename: `오답노트_${selectedYear === "all" ? "전체" : selectedYear + "년"}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  }
+
+  html2pdf().set(opt).from(target).save()
+}
+
+document.getElementById("oBtn").onclick = () => check("o")
+document.getElementById("xBtn").onclick = () => check("x")
+document.getElementById("nextBtn").onclick = nextQuestion
+document.getElementById("exportBtn").onclick = createPDF
+
+document.addEventListener("keydown", (e) => {
+  if(e.key === "1") check("o")
+  if(e.key === "2") check("x")
+  if(e.key === "3" || e.key === "Enter") nextQuestion()
+  if((e.key === "p" || e.key === "P") && wrongList.length > 0) createPDF()
+})
+</script>
+
+</body>
+</html>
